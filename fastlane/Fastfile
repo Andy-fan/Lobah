@@ -1,10 +1,18 @@
 # auth_key.p8 的规范绝对路径
+# 注意：fastlane 执行 lane 时 Dir.pwd 不稳定（可能是仓库根，也可能是 fastlane/ 目录），
+# 不能依赖 ./ 相对路径，按固定位置依次查找
 def auth_key_path
-  path = File.expand_path("./auth_key.p8")
-  UI.user_error!("找不到 auth_key.p8（#{path}），请确认 CI 里 ASC_PRIVATE_KEY 已正确写入") unless File.file?(path)
-  # xcodebuild 要求 -authenticationKeyPath 必须是不含 .. 的规范绝对路径，
-  # 而 fastlane 执行 lane 时的工作目录形如 .../Lobah/fastlane/..，直接 expand_path 会带上 ../
-  File.realpath(path)
+  candidates = [
+    ENV["GITHUB_WORKSPACE"] ? File.expand_path("auth_key.p8", ENV["GITHUB_WORKSPACE"]) : nil,
+    File.expand_path("./auth_key.p8"),
+    File.expand_path("../auth_key.p8")
+  ].compact.uniq
+
+  found = candidates.find { |p| File.file?(p) }
+  UI.user_error!("找不到 auth_key.p8，尝试过：#{candidates.join(' , ')}") unless found
+
+  # xcodebuild 要求 -authenticationKeyPath 必须是不含 .. 的规范绝对路径
+  File.realpath(found)
 end
 
 # 让 xcodebuild 用 App Store Connect API Key 自己去 Apple 生成/下载描述文件
