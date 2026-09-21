@@ -1,3 +1,17 @@
+# 让 xcodebuild 用 App Store Connect API Key 自己去 Apple 生成/下载描述文件
+def signing_xcargs
+  [
+    "-allowProvisioningUpdates",
+    "-authenticationKeyPath #{File.expand_path('./auth_key.p8')}",
+    "-authenticationKeyID #{ENV['ASC_KEY_ID']}",
+    "-authenticationKeyIssuerID #{ENV['ASC_ISSUER_ID']}"
+  ].join(" ")
+end
+
+# ===========================================================================
+# 方案 A（当前使用）：本地导出 p12，CI 导入 keychain 复用同一张固定证书
+# 对应 Secret：BUILD_CERTIFICATE_BASE64 / P12_PASSWORD / KEYCHAIN_PASSWORD
+# ===========================================================================
 lane :beta do
   api_key = app_store_connect_api_key(
     key_id: ENV["ASC_KEY_ID"],
@@ -6,14 +20,54 @@ lane :beta do
     duration: 1200
   )
 
-  match(app_store: true, api_key: api_key)
+  build_app(
+    project: "Lobah.xcodeproj",
+    scheme: "Lobah",
+    configuration: "Release",
+    export_method: "app-store",
+    output_directory: "./output",
+    output_name: "Lobah.ipa",
+    xcargs: signing_xcargs
+  )
+
+  upload_to_testflight(
+    api_key: api_key,
+    skip_waiting_for_build_processing: true
+  )
+end
+
+# ===========================================================================
+# 方案 B（备用）：无 p12，每次构建让 CI 新建证书
+#   Apple Distribution 每个团队只有 1 张，所以构建前必须先吊销旧的
+#   注意：本次构建创建的证书会保留，等下次构建前再吊销
+# ===========================================================================
+lane :beta_stateless do
+  api_key = app_store_connect_api_key(
+    key_id: ENV["ASC_KEY_ID"],
+    issuer_id: ENV["ASC_ISSUER_ID"],
+    key_filepath: "./auth_key.p8",
+    duration: 1200
+  )
+
+  unless ENV["REVOKE_DISTRIBUTION_CERTS"] == "true"
+    UI.user_error!("方案 B 会吊销账号现有的 Apple Distribution 证书，确认后请设置 REVOKE_DISTRIBUTION_CERTS=true")
+  end
+
+  Spaceship::ConnectAPI::Certificate.all(filter: {
+    certificateType: Spaceship::ConnectAPI::Certificate::CertificateType::DISTRIBUTION
+  }).each do |certificate|
+    UI.important("吊销分发证书 #{certificate.id} (#{certificate.display_name})")
+    certificate.delete!
+  end
 
   build_app(
     project: "Lobah.xcodeproj",
     scheme: "Lobah",
     configuration: "Release",
+    export_method: "app-store",
     output_directory: "./output",
-    output_name: "Lobah.ipa"
+    output_name: "Lobah.ipa",
+    xcargs: signing_xcargs
   )
 
   upload_to_testflight(

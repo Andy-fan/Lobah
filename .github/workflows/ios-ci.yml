@@ -6,6 +6,20 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      signing_mode:
+        description: '签名方式'
+        required: true
+        default: 'p12'
+        type: choice
+        options:
+          - p12
+          - stateless
+
+# 串行执行，避免两个 job 同时改证书/描述文件
+concurrency:
+  group: ios-ci-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -26,9 +40,51 @@ jobs:
       - name: Install fastlane dependencies
         run: bundle install
 
-      - name: Run fastlane beta
+      - name: Write App Store Connect API key
+        env:
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if printf '%s' "$ASC_PRIVATE_KEY" | grep -q "BEGIN PRIVATE KEY"; then
+            printf '%s\n' "$ASC_PRIVATE_KEY" > auth_key.p8
+          else
+            printf '%s' "$ASC_PRIVATE_KEY" | openssl base64 -d -A > auth_key.p8
+          fi
+          test -s auth_key.p8
+
+      # 方案 A：导入固定证书（方案 B stateless 时跳过）
+      - name: Import Apple distribution certificate
+        if: github.event.inputs.signing_mode != 'stateless'
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | openssl base64 -d -A > "$CERTIFICATE_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+          # 应输出 1 个有效签名身份："Apple Distribution: xxx (646YGR4W7H)"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Run fastlane
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
-        run: bundle exec fastlane beta
+          REVOKE_DISTRIBUTION_CERTS: ${{ github.event.inputs.signing_mode == 'stateless' && 'true' || '' }}
+        run: |
+          if [ "${{ github.event.inputs.signing_mode }}" = "stateless" ]; then
+            bundle exec fastlane beta_stateless
+          else
+            bundle exec fastlane beta
+          fi

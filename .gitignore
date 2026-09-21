@@ -21,6 +21,11 @@ Pods/
 Podfile.lock
 
 # Fastlane
+auth_key.p8
+*.p8
+*.p12
+*.mobileprovision
+output/
 fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots
