@@ -5,7 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch: # 网页手动触发打包
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,14 +18,17 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.2'
-          bundler-cache: true
+          bundler-cache: false
 
-      - name: Install fastlane
+      - name: Install bundler
+        run: gem install bundler
+
+      - name: Install fastlane dependencies
         run: bundle install
 
-      - name: Fastlane build & upload TestFlight
+      - name: Run fastlane beta
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
-        run: fastlane beta
+        run: bundle exec fastlane beta
