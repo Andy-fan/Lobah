@@ -53,28 +53,42 @@ jobs:
           test -s auth_key.p8
 
       # 方案 A：导入固定证书（方案 B stateless 时跳过）
-      - name: Import Apple distribution certificate
+      # archive 阶段用开发证书签名，导出阶段用分发证书，两个都要
+      - name: Import Apple certificates
         if: github.event.inputs.signing_mode != 'stateless'
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          DEVELOPMENT_CERTIFICATE_BASE64: ${{ secrets.DEVELOPMENT_CERTIFICATE_BASE64 }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           set -euo pipefail
-          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-
-          printf '%s' "$BUILD_CERTIFICATE_BASE64" | openssl base64 -d -A > "$CERTIFICATE_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          import_p12 () {
+            CERT_PATH="$RUNNER_TEMP/$1"
+            printf '%s' "$2" | openssl base64 -d -A > "$CERT_PATH"
+            security import "$CERT_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          }
+
+          # Apple Distribution（导出/TestFlight 用）
+          import_p12 build_certificate.p12 "$BUILD_CERTIFICATE_BASE64"
+
+          # Apple Development（archive 阶段签名用）
+          if [ -n "${DEVELOPMENT_CERTIFICATE_BASE64:-}" ]; then
+            import_p12 dev_certificate.p12 "$DEVELOPMENT_CERTIFICATE_BASE64"
+          else
+            echo "::warning::未配置 DEVELOPMENT_CERTIFICATE_BASE64，archive 阶段可能报 No signing certificate iOS Development"
+          fi
+
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
 
-          # 应输出 1 个有效签名身份："Apple Distribution: xxx (646YGR4W7H)"
+          # 应输出 2 个有效签名身份：Apple Development + Apple Distribution (646YGR4W7H)
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
       - name: Run fastlane
