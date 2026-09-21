@@ -17,8 +17,7 @@ platform :ios do
       configuration: "Release",
       output_directory: "./output",
       output_name: "Lobah.ipa",
-      automatic_signing: true,
-      allow_provisioning_updates: true
+      xcargs: "-allowProvisioningUpdates"
     )
 
     upload_to_testflight(
