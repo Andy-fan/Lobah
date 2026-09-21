@@ -69,6 +69,12 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
+          # 导入 WWDR 中间证书，避免签名链验证失败被误报为 revoked/expired
+          for g in G4 G5 G6; do
+            curl -fsSL -o "$RUNNER_TEMP/wwdr_$g.cer" "https://www.apple.com/certificateauthority/AppleWWDRCA$g.cer" || true
+            security import "$RUNNER_TEMP/wwdr_$g.cer" -k "$KEYCHAIN_PATH" || true
+          done
+
           import_p12 () {
             CERT_PATH="$RUNNER_TEMP/$1"
             printf '%s' "$2" | openssl base64 -d -A > "$CERT_PATH"
