@@ -134,13 +134,27 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          SHORT_SHA=$(printf '%s' "$COMMIT_SHA" | cut -c1-7)
 
-          DESC="分支: ${BRANCH_NAME}
-          提交: ${SHORT_SHA}
-          构建号: #${RUN_NUMBER}
-          触发: ${EVENT_NAME} / ${BUILD_ACTOR}
-          更新说明: ${COMMIT_MSG:-无}"
+          # 从 git 读取当前分支的最后一条提交（push / dispatch / PR 各种触发方式都有效）
+          LAST_SHA=$(git log -1 --pretty=format:'%h' || true)
+          LAST_AUTHOR=$(git log -1 --pretty=format:'%an' || true)
+          LAST_DATE=$(git log -1 --pretty=format:'%ad' --date=short || true)
+          LAST_SUBJECT=$(git log -1 --pretty=format:'%s' || true)
+          LAST_BODY=$(git log -1 --pretty=format:'%b' || true)
+
+          COMMIT_LINE="${LAST_SHA}"
+          if [ -n "$LAST_AUTHOR" ]; then COMMIT_LINE="${COMMIT_LINE} ${LAST_AUTHOR}"; fi
+          if [ -n "$LAST_DATE" ]; then COMMIT_LINE="${COMMIT_LINE} ${LAST_DATE}"; fi
+          if [ -n "$LAST_SUBJECT" ]; then COMMIT_LINE="${COMMIT_LINE} ${LAST_SUBJECT}"; fi
+
+          UPDATE_NOTE="${COMMIT_MSG:-}"
+          if [ -z "$UPDATE_NOTE" ]; then UPDATE_NOTE="${LAST_SUBJECT:-无}"; fi
+          if [ -n "$LAST_BODY" ]; then
+            UPDATE_NOTE="${UPDATE_NOTE}"$'\n'"${LAST_BODY}"
+          fi
+
+          DESC=$(printf '分支: %s\n最后提交: %s\n构建号: #%s\n触发: %s / %s\n更新说明: %s' \
+            "$BRANCH_NAME" "$COMMIT_LINE" "$RUN_NUMBER" "$EVENT_NAME" "$BUILD_ACTOR" "$UPDATE_NOTE")
 
           echo "蒲公英更新说明:"
           echo "$DESC"
