@@ -126,12 +126,29 @@ jobs:
         if: github.event.inputs.signing_mode != 'stateless' && github.event.inputs.target != 'testflight'
         env:
           PGYER_API_KEY: ${{ secrets.PGYER_API_KEY }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          RUN_NUMBER: ${{ github.run_number }}
+          BUILD_ACTOR: ${{ github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          SHORT_SHA=$(printf '%s' "$COMMIT_SHA" | cut -c1-7)
+
+          DESC="分支: ${BRANCH_NAME}
+          提交: ${SHORT_SHA}
+          构建号: #${RUN_NUMBER}
+          触发: ${EVENT_NAME} / ${BUILD_ACTOR}
+          更新说明: ${COMMIT_MSG:-无}"
+
+          echo "蒲公英更新说明:"
+          echo "$DESC"
+
           curl -fsS \
             -F "file=@output/Lobah.adhoc.ipa" \
             -F "_api_key=$PGYER_API_KEY" \
-            -F "buildUpdateDescription=CI 构建 ${GITHUB_SHA}" \
+            -F "buildUpdateDescription=$DESC" \
             https://upload.pgyer.com/apiv2/app/upload | tee pgyer_response.json
           test -s pgyer_response.json
 
