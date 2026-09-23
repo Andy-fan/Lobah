@@ -1,0 +1,23 @@
+# 混淆白名单：以下符号 / 资源在成品混淆时必须排除
+# 规则：只要某处靠「字符串」引用类名或方法名，就必须在这里
+# 一行一个条目，支持 # 注释，随业务迭代一起评审和版本化
+
+# ---- Storyboard / XIB 引用（改了会导致启动白屏或崩溃）----
+ViewController
+Main
+LaunchScreen
+
+# ---- 系统入口（Info.plist / UIApplicationMain / UIScene 配置引用）----
+AppDelegate
+SceneDelegate
+
+# ---- 反射调用入口（DynamicEntry.m 用 NSClassFromString / NSSelectorFromString 引用）----
+LoginManager
+sharedManager
+loginWithUsername:password:completion:
+
+# ---- 可安全混淆（无需列入白名单，仅作记录）----
+# UserAccount        : accountSummary 等纯业务符号
+# PaymentProcessor   : payWithOrderId:amount:completion: / verifyReceiptData:
+# CryptoUtils        : md5DigestOfString: / sha256DigestOfString: / signPayload:withSalt:
+# 这三类是本次示例的「核心资产」，混淆前后用 class-dump 对比即可量化残留率

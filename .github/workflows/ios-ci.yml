@@ -1,4 +1,4 @@
-name: iOS CI Build & Upload TestFlight
+name: iOS CI Build & Distribute
 
 on:
   push:
@@ -15,6 +15,14 @@ on:
         options:
           - p12
           - stateless
+      target:
+        description: '分发目标（默认蒲公英）'
+        required: true
+        default: 'pgyer'
+        type: choice
+        options:
+          - pgyer
+          - testflight
 
 # 串行执行，避免两个 job 同时改证书/描述文件
 concurrency:
@@ -103,8 +111,34 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           REVOKE_DISTRIBUTION_CERTS: ${{ github.event.inputs.signing_mode == 'stateless' && 'true' || '' }}
         run: |
+          set -euo pipefail
           if [ "${{ github.event.inputs.signing_mode }}" = "stateless" ]; then
             bundle exec fastlane beta_stateless
-          else
+          elif [ "${{ github.event.inputs.target }}" = "testflight" ]; then
             bundle exec fastlane beta
+          else
+            bundle exec fastlane beta_pgyer
           fi
+
+      # 蒲公英上传（App Store 包装不上手机，所以上面用的是 ad-hoc 包）
+      # 不传 buildInstallType 时默认为 1（公开安装），无需安装密码
+      - name: Upload to Pgyer
+        if: github.event.inputs.signing_mode != 'stateless' && github.event.inputs.target != 'testflight'
+        env:
+          PGYER_API_KEY: ${{ secrets.PGYER_API_KEY }}
+        run: |
+          set -euo pipefail
+          curl -fsS \
+            -F "file=@output/Lobah.adhoc.ipa" \
+            -F "_api_key=$PGYER_API_KEY" \
+            -F "buildUpdateDescription=CI 构建 ${GITHUB_SHA}" \
+            https://upload.pgyer.com/apiv2/app/upload | tee pgyer_response.json
+          test -s pgyer_response.json
+
+      - name: Upload ipa artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lobah-ipa-${{ github.sha }}
+          path: output/*.ipa
+          if-no-files-found: warn

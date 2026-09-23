@@ -1,0 +1,4 @@
+Device ID	Device Name
+# 上面一行是必需的表头，不能删；下面每行一台设备：UDID<Tab>设备名（必须是 Tab，不能用空格）
+# 00008120-001A2BC3DEF0001E	kkoanba iPhone 15 Pro
+# 获取 UDID：Xcode → Devices and Simulators 里复制 Identifier，或访问 https://udid.io

@@ -54,6 +54,47 @@ lane :beta do
 end
 
 # ===========================================================================
+# 蒲公英分发：必须导出 ad-hoc 包（app-store 包装不上手机）
+#   前提：测试机 UDID 已在开发者后台登记（可用 register_devices lane 批量导入）
+#   上传动作放在 workflow 里做，Secret 由 GitHub 自动打码，不进 fastlane 日志
+# ===========================================================================
+lane :beta_pgyer do
+  api_key = app_store_connect_api_key(
+    key_id: ENV["ASC_KEY_ID"],
+    issuer_id: ENV["ASC_ISSUER_ID"],
+    key_filepath: "./auth_key.p8",
+    duration: 1200
+  )
+
+  build_app(
+    project: "Lobah.xcodeproj",
+    scheme: "Lobah",
+    configuration: "Release",
+    export_method: "ad-hoc",
+    output_directory: "./output",
+    output_name: "Lobah.adhoc.ipa",
+    xcargs: signing_xcargs
+  )
+end
+
+# 批量登记测试设备 UDID（ad-hoc 分发的必要前提）
+# fastlane/devices.txt 每行一个：设备名<Tab>UDID
+lane :register_devices do
+  api_key = app_store_connect_api_key(
+    key_id: ENV["ASC_KEY_ID"],
+    issuer_id: ENV["ASC_ISSUER_ID"],
+    key_filepath: "./auth_key.p8",
+    duration: 1200
+  )
+
+  register_devices(
+    devices_file: "./fastlane/devices.txt",
+    api_key: api_key,
+    team_id: "646YGR4W7H"
+  )
+end
+
+# ===========================================================================
 # 方案 B（备用）：无 p12，每次构建让 CI 新建证书
 #   Apple Distribution 每个团队只有 1 张，所以构建前必须先吊销旧的
 #   注意：本次构建创建的证书会保留，等下次构建前再吊销
